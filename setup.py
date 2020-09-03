@@ -4,7 +4,7 @@ from distutils.core import setup
 setup(
   name = 'tuaneda',         # How you named your package folder (MyLib)
   packages = ['tuaneda'],   # Chose the same as "name"
-  version = '0.0.1',      # Start with a small number and increase it with every change you make
+  version = '0.0.2',      # Start with a small number and increase it with every change you make
   license='MIT',        # Chose a license from here: https://help.github.com/articles/licensing-a-repository
   description = 'Quick EDA and important variable analysis',   # Give a short description about your library
   author = 'Tuan Bui',                   # Type in your name
@@ -14,7 +14,7 @@ setup(
   keywords = ['eda', 'important variables', 'exploratory analysis'],   # Keywords that define your package best
   install_requires=[            # I get to this in a second
     'seaborn','matplotlib','sklearn','panda',
-    'numpy','statsmodels','eli5'
+    'numpy','statsmodels','eli5','missingno'
       ],
   classifiers=[
     'Development Status :: 3 - Alpha',      # Chose either "3 - Alpha", "4 - Beta" or "5 - Production/Stable" as the current state of your package

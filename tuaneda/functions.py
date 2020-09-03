@@ -14,8 +14,12 @@ from math import sqrt
 import eli5
 from eli5.sklearn import PermutationImportance
 
+import missingno as msno
+
 
 class tuaneda:
+
+
     def heatmap(df):
         corrmat = df.corr()
         top_corr_features = corrmat.index
@@ -32,6 +36,9 @@ class tuaneda:
         p_values.sort_values(ascending=True, inplace=True)
         # Visualize p-values
         p_values.plot.bar(figsize=(16,5), title='p-values')
+        
+    def missing_map(df):
+        msno.matrix(df)
 
     def best_features(X,y):
         """
