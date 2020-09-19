@@ -1,9 +1,11 @@
 This library is a quick way to do exploratory statistical analysis to evaluate variable relationship and importance
 
 From your notebook environment:
+
     !pip install tuaneda
 
 Show available functions in the library:
+
     help(tuaneda.functions)
 
 Example:
