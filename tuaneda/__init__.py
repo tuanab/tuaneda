@@ -1,15 +1,14 @@
-from .functions import heatmap
-from .functions import datetime_obj
-from .functions import pvalues_plot
-from .functions import chi_square
-from .functions import F_test
-from .functions import rsquares_iter
-from .functions import randomforest
-from .functions import permutation_importance
+from .tuanfuncs import heatmap
+from .tuanfuncs import pvalues_plot
+from .tuanfuncs import chi_square
+from .tuanfuncs import F_test
+from .tuanfuncs import rsquares_iter
+from .tuanfuncs import quick_rf_importance
+from .tuanfuncs import permutation_importance
+from .tuanfuncs import woe_iv
+from .tuanfuncs import barchart_dict
 
 
-
-
-# __all__ = [
-#     'functions'
-# ]
+__all__ = [
+    'functions'
+]

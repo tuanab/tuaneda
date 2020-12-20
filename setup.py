@@ -4,13 +4,13 @@ from distutils.core import setup
 setup(
   name = 'tuaneda',         # How you named your package folder (MyLib)
   packages = ['tuaneda'],   # Chose the same as "name"
-  version = '0.0.8',      
+  version = '0.1.9',      
   license='MIT',        # Chose a license from here: https://help.github.com/articles/licensing-a-repository
   description = 'Quick EDA and important variable analysis',   # Give a short description about your library
   author = 'Tuan Bui',                   
   author_email = 'kevbui.29@gmail.com',      
   url = 'https://github.com/ubunTuan',  
-  download_url = 'https://github.com/ubunTuan/tuaneda/archive/0.0.8.tar.gz',    
+  download_url = 'https://github.com/ubunTuan/tuaneda/archive/0.1.9.tar.gz',    
   keywords = ['eda', 'important variables', 'exploratory analysis'],   
   install_requires=[           
     'seaborn','matplotlib','sklearn','panda',
