@@ -3,12 +3,16 @@ This library is a quick way to do exploratory statistical analysis to evaluate v
 From your notebook environment:
 
     !pip install tuaneda
+    
+Import the library
 
+    from tuaneda import tuanfuncs
+    
 Show available functions in the library:
 
-    help(tuaneda.functions)
+    help(tuanfuncs)
 
-Example:
+Example on chi-square analysis of categorical variables:
 
     titanic = pd.read_csv('path/titanic_train.csv')
     titanic_categorical_cols = ['Pclass','Sex','SibSp','Parch','Embarked','Survived']
