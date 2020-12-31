@@ -8,11 +8,7 @@ from pylab import rcParams
 import statsmodels.api as sm
 from sklearn.metrics import accuracy_score
 from sklearn.ensemble import RandomForestClassifier,ExtraTreesClassifier
-from sklearn.metrics import mean_squared_error
-from math import sqrt
-import eli5
-from eli5.sklearn import PermutationImportance
-import datetime
+# from sklearn.metrics import mean_squared_error
 import scipy.stats as stats
 from scipy.stats import chi2
 
@@ -89,33 +85,26 @@ def rsquares_iter(df,y_col,important_vars):
     plt.show()
     
 
-def quick_rf_importance(train_X, train_y,val_X,val_y):
-    my_model = RandomForestClassifier(random_state=123).fit(train_X, train_y)
-    pred_rf = my_model.predict_proba(val_X)
-    prediction_rf = np.asarray([np.argmax(line) for line in pred_rf])
-    accuracy = accuracy_score(val_y, prediction_rf)
-    rms = sqrt(mean_squared_error(val_y, prediction_rf))
-    feat_importances = pd.Series(my_model.feature_importances_, index=train_X.columns)
-    feat_importances.nlargest(10).plot(kind='barh')
-    rcParams['figure.figsize'] = 20, 10
-    plt.show()
+# def quick_rf_importance(train_X, train_y,val_X,val_y):
+#     my_model = RandomForestClassifier(random_state=123).fit(train_X, train_y)
+#     pred_rf = my_model.predict_proba(val_X)
+#     prediction_rf = np.asarray([np.argmax(line) for line in pred_rf])
+#     accuracy = accuracy_score(val_y, prediction_rf)
+#     rms = np.sqrt(mean_squared_error(val_y, prediction_rf))
+#     feat_importances = pd.Series(my_model.feature_importances_, index=train_X.columns)
+#     feat_importances.nlargest(10).plot(kind='barh')
+#     rcParams['figure.figsize'] = 20, 10
+#     plt.show()
 
 def barchart_dict(d):
+    d = dict(sorted(d.items(), key=lambda item: item[1]))
     rcParams['figure.figsize'] = 20, 10
     plt.bar(range(len(d)), d.values(), align='center')
     plt.xticks(range(len(d)), list(d.keys()))
     plt.xticks(rotation=90)
     plt.show()
 
-
-def permutation_importance(my_model,val_X, val_y):
-    """
-    Plotting permutation importance
-    """
-    perm = PermutationImportance(my_model, random_state=1).fit(val_X, val_y)
-    eli5.show_weights(perm, feature_names = val_X.columns.tolist())
-
-def woe_iv(X,y,regularize:str):
+def woe_iv_continuous(X,y,regularize:str):
     """
     Finding weight of importance and informational value for binary classification tasks
     """
@@ -126,7 +115,54 @@ def woe_iv(X,y,regularize:str):
 
     for col in X.columns:
         # binning values
-        bins = np.linspace(df[col].min()-1, df[col].max()+1, round(0.05* X.shape[0]),0)  # each bin should have at least 5% of the observation
+        bins = np.linspace(df[col].min()-0.1, df[col].max()+0.1, int(0.05* X.shape[0]))  # each bin should have at least 5% of the observation
+        groups = df.groupby(np.digitize(df[col], bins))
+        df[col] = pd.cut(df[col], bins)
+
+        # getting class counts for each bin
+        count_series = df.groupby([col, 'target']).size()
+        new_df = count_series.to_frame(name = 'size').reset_index()
+        if regularize == True:
+            new_df['size'] = new_df['size'] + 0.5
+        df1  = new_df[new_df['target']==0].reset_index(drop=True)
+        df2  = new_df[new_df['target']==1].reset_index(drop=True)
+        df1['size1'] = df2['size']
+        new_df = df1.drop(columns=['target'])
+        sum = new_df['size'].sum()
+        sum1 = new_df['size1'].sum()
+        # Calculate woe and IV
+        new_df['woe'] = np.log((new_df['size']/sum)/(new_df['size1']/sum1))
+        new_df['IV'] = ((new_df['size']/sum) - (new_df['size1']/sum1)) * new_df['woe']
+        new_df = new_df.replace([np.inf, -np.inf], np.nan)
+        new_df.dropna(inplace=True)
+        woe_dict[col] = new_df.drop(columns=['size','size1'])
+        IV_dict[col] = new_df['IV'].sum()
+
+        # df_woe_iv = (pd.crosstab(df[col],df['target'],
+        #                   normalize='columns')
+        #          .assign(woe=lambda dfx: np.log(dfx[1] / dfx[0]))
+        #          .assign(iv=lambda dfx: np.sum(dfx['woe']*
+        #                                        (dfx[1]-dfx[0]))))
+        # df_woe_iv = df_woe_iv.replace([np.inf, -np.inf], np.nan)
+        # df_woe_iv.dropna(inplace=True)
+        # woe_dict[col] = df_woe_iv
+        # IV_dict[col] = df_woe_iv['iv'].sum()
+
+    return woe_dict, IV_dict
+
+
+def woe_iv_categ(X,y,regularize:str):
+    """
+    Finding weight of importance and informational value for binary classification tasks
+    """
+    df = X.copy()
+    df['target'] = y.copy()
+    IV_dict = {}
+    woe_dict = {}
+
+    for col in X.columns:
+        # binning values
+        bins = np.linspace(df[col].min()-0.1, df[col].max()+0.1, len(set(df[col])))  # each bin should have at least 5% of the observation
         groups = df.groupby(np.digitize(df[col], bins))
         df[col] = pd.cut(df[col], bins)
 
