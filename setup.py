@@ -10,7 +10,7 @@ setup(
   author = 'Tuan Bui',                   
   author_email = 'kevbui.29@gmail.com',      
   url = 'https://github.com/ubunTuan',  
-  download_url = 'https://github.com/ubunTuan/tuaneda/archive/0.2.5.tar.gz',    
+  download_url = 'https://github.com/ubunTuan/tuaneda/archive/v0.2.5.tar.gz',    
   keywords = ['eda', 'important variables', 'exploratory analysis'],   
   install_requires=[           
     'seaborn','matplotlib','sklearn','panda',
