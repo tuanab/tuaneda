@@ -20,7 +20,7 @@ Example on information value:
                          columns= iris['feature_names'] + ['target'])
 
     X = iris_data.iloc[:,:5]
-    y = iris_data['Survived']
+    y = iris_data['target']
 
     woe_dict, iv_dict = tuanfuncs.woe_iv_continuous(X,y,True)
     iv_graph = tuanfuncs.barchart_dict(iv_dict) 
