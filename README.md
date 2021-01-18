@@ -12,18 +12,18 @@ Show available functions in the library:
 
     help(tuanfuncs)
 
-Example on chi-square analysis of categorical variables:
+Example on information value:
 
-    titanic = pd.read_csv('path/titanic_train.csv')
-    titanic_categorical_cols = ['Pclass','Sex','SibSp','Parch','Embarked','Survived']
+    from sklearn.datasets import load_iris
+    iris = load_iris()
+    iris_data = pd.DataFrame(data= np.c_[iris['data'], iris['target']],
+                         columns= iris['feature_names'] + ['target'])
 
-    df = titanic[titanic_categorical_cols]
+    X = iris_data.iloc[:,:5]
+    y = iris_data['Survived']
 
-    X = df.iloc[:,:5]
-    y = df['Survived']
-
-    b = tuaneda.functions.chi_square(X,y,0.05)
-    b
+    woe_dict, iv_dict = tuanfuncs.woe_iv_continuous(X,y,True)
+    iv_graph = tuanfuncs.barchart_dict(iv_dict) 
     
 
     
