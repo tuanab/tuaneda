@@ -9,16 +9,27 @@ from scipy.stats import chi2
 import time,tqdm
 
 
-class Gaussian_process():
-
-    measurement_variance = 1
-
-    def __init__(self, train_inputs, train_targets, test_inputs, test_targets, k_folds):
+class ML_models():
+    def __init__(self, train_inputs, train_targets, test_inputs, test_targets):
         self.train_inputs = train_inputs
         self.train_targets = train_targets
         self.test_inputs = test_inputs
         self.test_targets = test_targets
+
+    def plot_error_function(self,error,hyperparameters):
+        plt.plot(hyperparameters,error)
+        plt.ylabel('error')
+        plt.xlabel('parameter')
+        plt.show()
+
+class Gaussian_process(ML_models):
+
+    measurement_variance = 1
+
+    def __init__(self, train_inputs, train_targets, test_inputs, test_targets, k_folds, hyperparameters):
+        super().__init__(train_inputs, train_targets, test_inputs, test_targets)
         self.k_folds = k_folds
+        self.hyperparameters = hyperparameters
 
     def __str__(self):
         return(f'train_input size is {self.train_inputs.shape}, test_input size is {self.test_inputs.shape},train_target size is {self.train_targets.shape}, test_target size is {self.test_targets.shape}')
@@ -34,6 +45,7 @@ class Gaussian_process():
         mean, variance = self.predict_gaussian_process(inputs,posterior)
         errors = mean - targets
         mean_squared_error = np.sum(errors ** 2) / len(targets)
+
         return mean_squared_error
     
     def train_gaussian_process(self,train_inputs, train_targets, param):
@@ -45,6 +57,7 @@ class Gaussian_process():
             mean = np.matmul(np.matmul(self.gaussian_kernel(inputs,train_inputs,param),inverse_regularized_gram_matrix),train_targets)
             variance = np.diag(self.gaussian_kernel(inputs,inputs,param) + self.measurement_variance * np.identity(inputs.shape[0]) - np.matmul(self.gaussian_kernel(inputs,train_inputs,param),inverse_regularized_gram_matrix).dot(self.gaussian_kernel(train_inputs,inputs,param)))
             return mean, variance
+
         return posterior
 
     def gaussian_kernel(self,inputs1,inputs2,width):
@@ -56,10 +69,10 @@ class Gaussian_process():
         gram_matrix = np.matmul(self.train_inputs,self.train_inputs.transpose())
         return gram_matrix
 
-    def cross_validation_gaussian_process(self, hyperparameters):
+    def cross_validation_gaussian_process(self):
         fold_size = len(self.train_targets)/self.k_folds
-        mean_squared_errors = np.zeros(len(hyperparameters))
-        for id, hyperparam in enumerate(hyperparameters):
+        mean_squared_errors = np.zeros(len(self.hyperparameters))
+        for id, hyperparam in enumerate(self.hyperparameters):
             for fold in tqdm.tqdm(range(self.k_folds)):
                 time.sleep(0.00001)
             
@@ -75,14 +88,106 @@ class Gaussian_process():
                 mean_squared_errors[id] += self.eval_gaussian_process(self.train_inputs, posterior, self.train_targets)
         mean_squared_errors /= self.k_folds
         best_mean_squared_error = np.min(mean_squared_errors)
-        best_hyperparam = hyperparameters[np.argmin(mean_squared_errors)]
+        best_hyperparam = self.hyperparameters[np.argmin(mean_squared_errors)]
         return best_hyperparam, best_mean_squared_error, mean_squared_errors
 
-    def training_gaussian(self, hyperparams):
-        best_width, best_mean_squared_error, errors = self.cross_validation_gaussian_process(hyperparams)
+
+    def training_gaussian(self):
+
+        best_width, best_mean_squared_error, errors = self.cross_validation_gaussian_process()
         posterior = self.train_gaussian_process(self.train_inputs, self.train_targets, best_width)
         mse = self.eval_gaussian_process(self.test_inputs, posterior, self.test_targets)
+
         return posterior, mse, errors
+
+
+class LogisticReg(ML_models):
+
+    def __init__(self, train_inputs, train_targets, test_inputs, test_targets, k_folds, hyperparameters):
+        super().__init__(train_inputs, train_targets, test_inputs, test_targets)
+        self.k_folds = k_folds
+        self.hyperparameters = hyperparameters
+
+    def __str__(self):
+        return(f'train_input size is {self.train_inputs.shape}, test_input size is {self.test_inputs.shape},train_target size is {self.train_targets.shape}, test_target size is {self.test_targets.shape}')
+    
+    __repr__ = __str__
+
+    @staticmethod
+    def sigmoid(input):
+        output = 1/(1+np.exp(-input))
+        return output
+
+    def predict_logistic_regression(self,inputs, weights):
+        logits = np.matmul(inputs,weights)
+        sigma = self.sigmoid(logits)
+        predicted_probabilities = np.column_stack((1-sigma,sigma))
+        return predicted_probabilities
+
+    def eval_logistic_regression(self,inputs, weights, labels):
+
+        predicted_probabilities = self.predict_logistic_regression(inputs,weights)
+        prediction = np.argmax(predicted_probabilities,axis=1)
+
+        accuracy_check = prediction - labels
+        accuracy = 1-(np.count_nonzero(accuracy_check) / labels.shape[0])
+
+        neg_log_prob = -sum(labels * np.log(self.sigmoid(inputs.dot(weights))) + (1-labels) * np.log(1 - self.sigmoid(inputs.dot(weights))))
+        
+        return neg_log_prob, accuracy
+
+    @staticmethod
+    def initialize_weights(n_weights):
+        np.random.seed(123)
+        random_weights = np.random.rand(n_weights)/10 - 0.05
+        return random_weights
+
+    def train_logistic_regression(self,lambda_hyperparam, train_inputs=None, train_targets=None):
+        if train_inputs is None:
+            train_inputs = self.train_inputs
+            train_targets = self.train_targets
+
+        weights = self.initialize_weights(train_inputs.shape[1])
+        R = np.identity(train_inputs.shape[0])
+
+        # Finding optimal weights
+        max_change = 1
+        while max_change > 0.001:
+        # Creating R matrix of size N-N
+            for i in range(train_inputs.shape[0]):
+                R[i][i] = self.sigmoid(train_inputs[i].dot(weights)) * (1 - self.sigmoid(train_inputs[i].dot(weights)))
+
+            # Creating H with the lambda param
+            H = train_inputs.T.dot(R).dot(train_inputs) + lambda_hyperparam * np.identity(train_inputs.shape[1])
+            inverse_H = np.linalg.inv(H)
+
+            # Finding gradient of the loss function with the lambda param
+            gradient_L = train_inputs.T.dot(self.sigmoid(train_inputs.dot(weights)) - train_targets) + lambda_hyperparam * weights
+
+            # Find new weights
+            delta = inverse_H.dot(gradient_L)
+            weights = weights - delta
+            max_change = max(delta)
+
+        return weights  
+
+    def cross_validation_logistic_regression(self):
+        fold_size = len(self.train_targets)/self.k_folds
+        neg_log_probabilities = np.zeros(len(self.hyperparameters))
+        for id, hyperparam in enumerate(self.hyperparameters):
+            for fold in range(self.k_folds):
+                validation_inputs = self.train_inputs[int(round(fold*fold_size)):int(round((fold+1)*fold_size))]
+                validation_targets = self.train_targets[int(round(fold*fold_size)):int(round((fold+1)*fold_size))]
+                train_inputs = np.concatenate((self.train_inputs[:int(round(fold*fold_size))],self.train_inputs[int(round((fold+1)*fold_size)):]))
+                train_targets = np.concatenate((self.train_targets[:int(round(fold*fold_size))],self.train_targets[int(round((fold+1)*fold_size)):]))
+                weights = self.train_logistic_regression(hyperparam, train_inputs, train_targets)
+                neg_log_prob, accuracy = self.eval_logistic_regression(validation_inputs, weights, validation_targets)
+                neg_log_probabilities[id] += neg_log_prob
+        neg_log_probabilities /= self.k_folds
+        best_neg_log_prob = np.min(neg_log_probabilities)
+        best_hyperparam = self.hyperparameters[np.argmin(neg_log_probabilities)]
+        return best_hyperparam, best_neg_log_prob, neg_log_probabilities
+
 
 class Stack():
     def __init__(self):
