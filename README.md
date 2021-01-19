@@ -11,6 +11,7 @@ Import the library
 Show available functions in the library:
 
     help(tuanfuncs)
+<<<<<<< HEAD
 
 Example on information value:
 
@@ -22,6 +23,19 @@ Example on information value:
     X = iris_data.iloc[:,:5]
     y = iris_data['target']
 
+=======
+
+Example on information value:
+
+    from sklearn.datasets import load_iris
+    iris = load_iris()
+    iris_data = pd.DataFrame(data= np.c_[iris['data'], iris['target']],
+                         columns= iris['feature_names'] + ['target'])
+
+    X = iris_data.iloc[:,:5]
+    y = iris_data['target']
+
+>>>>>>> 35bcb411d33f1fd135cca11c379fbc1c171bf8e1
     woe_dict, iv_dict = tuanfuncs.woe_iv_continuous(X,y,True)
     iv_graph = tuanfuncs.barchart_dict(iv_dict) 
     
