@@ -1,12 +1,12 @@
 import seaborn as sns
 import matplotlib.pyplot as plt
-# from sklearn.feature_selection import f_classif
 import pandas as pd
 import numpy as np
 from pylab import rcParams
 import scipy.stats as stats
 from scipy.stats import chi2
 import time,tqdm
+from imblearn.over_sampling import SMOTE
 
 
 class ML_models():
@@ -16,7 +16,7 @@ class ML_models():
         self.test_inputs = test_inputs
         self.test_targets = test_targets
 
-    def plot_error_function(self,error,hyperparameters):
+    def plot_cost_function(self,error,hyperparameters):
         plt.plot(hyperparameters,error)
         plt.ylabel('error')
         plt.xlabel('parameter')
@@ -103,10 +103,13 @@ class Gaussian_process(ML_models):
 
 class LogisticReg(ML_models):
 
-    def __init__(self, train_inputs, train_targets, test_inputs, test_targets, k_folds, hyperparameters):
+    def __init__(self, train_inputs, train_targets, test_inputs, test_targets, k_folds, hyperparameters, imbalanced=False, upsampling=False):
         super().__init__(train_inputs, train_targets, test_inputs, test_targets)
         self.k_folds = k_folds
         self.hyperparameters = hyperparameters
+        self.imbalanced = imbalanced
+        self.upsampling = upsampling
+
 
     def __str__(self):
         return(f'train_input size is {self.train_inputs.shape}, test_input size is {self.test_inputs.shape},train_target size is {self.train_targets.shape}, test_target size is {self.test_targets.shape}')
@@ -124,17 +127,32 @@ class LogisticReg(ML_models):
         predicted_probabilities = np.column_stack((1-sigma,sigma))
         return predicted_probabilities
 
+    @staticmethod
+    def calculate_f1(labels,prediction):
+        df_confusion = pd.crosstab(labels, prediction)
+        TN = df_confusion.iloc[0,0]
+        FN = df_confusion.iloc[1,0]
+        TP = df_confusion.iloc[1,1]
+        FP = df_confusion.iloc[0,1]
+        recall = TN / (TP + FN)
+        precision = TP / (TP + FP)
+        f1 = (2 * recall * precision) / (recall + precision)
+
+        return f1
+
     def eval_logistic_regression(self,inputs, weights, labels):
 
         predicted_probabilities = self.predict_logistic_regression(inputs,weights)
         prediction = np.argmax(predicted_probabilities,axis=1)
 
-        accuracy_check = prediction - labels
-        accuracy = 1-(np.count_nonzero(accuracy_check) / labels.shape[0])
-
-        neg_log_prob = -sum(labels * np.log(self.sigmoid(inputs.dot(weights))) + (1-labels) * np.log(1 - self.sigmoid(inputs.dot(weights))))
+        # accuracy_check = prediction - labels
+        # accuracy = 1-(np.count_nonzero(accuracy_check) / labels.shape[0])
+        if self.imbalanced == True:
+            score = self.calculate_f1(labels, prediction)
+        else:
+            score = -sum(labels * np.log(self.sigmoid(inputs.dot(weights))) + (1-labels) * np.log(1 - self.sigmoid(inputs.dot(weights))))
         
-        return neg_log_prob, accuracy
+        return score
 
     @staticmethod
     def initialize_weights(n_weights):
@@ -173,7 +191,17 @@ class LogisticReg(ML_models):
 
     def cross_validation_logistic_regression(self):
         fold_size = len(self.train_targets)/self.k_folds
-        neg_log_probabilities = np.zeros(len(self.hyperparameters))
+        scores = np.zeros(len(self.hyperparameters))
+
+        # Oversample the under-represented class
+        if self.upsampling == True:
+            os = SMOTE(random_state=123)
+            os_data_X,os_data_y=os.fit_sample(self.train_inputs, self.train_targets)
+            # os_data_X = pd.DataFrame(data=os_data_X,columns=adjusted_feature_list )
+            # os_data_y= pd.DataFrame(data=os_data_y)
+            self.train_inputs = np.asarray(os_data_X)
+            self.train_targets = np.asarray(os_data_y)
+
         for id, hyperparam in enumerate(self.hyperparameters):
             for fold in range(self.k_folds):
                 validation_inputs = self.train_inputs[int(round(fold*fold_size)):int(round((fold+1)*fold_size))]
@@ -181,12 +209,19 @@ class LogisticReg(ML_models):
                 train_inputs = np.concatenate((self.train_inputs[:int(round(fold*fold_size))],self.train_inputs[int(round((fold+1)*fold_size)):]))
                 train_targets = np.concatenate((self.train_targets[:int(round(fold*fold_size))],self.train_targets[int(round((fold+1)*fold_size)):]))
                 weights = self.train_logistic_regression(hyperparam, train_inputs, train_targets)
-                neg_log_prob, accuracy = self.eval_logistic_regression(validation_inputs, weights, validation_targets)
-                neg_log_probabilities[id] += neg_log_prob
-        neg_log_probabilities /= self.k_folds
-        best_neg_log_prob = np.min(neg_log_probabilities)
-        best_hyperparam = self.hyperparameters[np.argmin(neg_log_probabilities)]
-        return best_hyperparam, best_neg_log_prob, neg_log_probabilities
+                score = self.eval_logistic_regression(validation_inputs, weights, validation_targets)
+                scores[id] += score
+
+        scores /= self.k_folds
+
+        if self.imbalanced == True:
+            best_score = np.max(scores)
+            best_hyperparam = self.hyperparameters[np.argmax(scores)]
+            return best_hyperparam, best_score, scores
+        else:
+            best_score = np.min(scores)
+            best_hyperparam = self.hyperparameters[np.argmin(scores)]
+            return best_hyperparam, best_score, scores
 
 
 class Stack():
@@ -477,17 +512,6 @@ def heatmap(df):
     top_corr_features = corrmat.index
     plt.figure(figsize=(20,20))
     g=sns.heatmap(df[top_corr_features].corr(),annot=True,cmap="RdYlGn")
-
-# def pvalues_plot(X,y):
-#     """
-#     Plotting p-values for all the univariate tests
-#     """
-#     sel = f_classif(X,y)
-#     p_values = pd.Series(sel[1])
-#     p_values.index = X.columns
-#     p_values.sort_values(ascending=True, inplace=True)
-#     # Visualize p-values
-#     p_values.plot.bar(figsize=(16,5), title='p-values')
     
 def chi_square(X,y,alpha:float):
     result = pd.DataFrame(columns=['Independent_Variable','Alpha','Degree_of_Freedom', 'Chi_Square','P_value','Conclusion'])
