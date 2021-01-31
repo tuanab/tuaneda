@@ -7,6 +7,9 @@ import scipy.stats as stats
 from scipy.stats import chi2
 import time,tqdm
 from imblearn.over_sampling import SMOTE
+import lightgbm as lgb  
+from sklearn.model_selection import StratifiedKFold
+from sklearn.metrics import roc_auc_score
 
 
 class ML_models():
@@ -21,6 +24,49 @@ class ML_models():
         plt.ylabel('error')
         plt.xlabel('parameter')
         plt.show()
+
+    def concept_drift(self):
+        trn, tst = self.train_inputs.copy(), self.test_inputs.copy()
+        trn = np.concatenate((trn,np.ones((trn.shape[0],1))),1)
+        tst = np.concatenate((tst,np.zeros((tst.shape[0],1))),1)
+
+        merged_array = np.vstack((trn,tst))
+
+        X_ = np.asarray([e[:-1] for e in list(merged_array)])
+        y_ = np.asarray([e[-1] for e in list(merged_array)])
+
+        predictions = np.zeros(y_.shape)
+
+        np.random.seed(123)
+        lgb_model = lgb.LGBMClassifier(n_jobs=-1, max_depth=-1, n_estimators=500, learning_rate=0.1, num_leaves=30, colsample_bytree=0.28, objective='binary')
+
+        skf = StratifiedKFold(n_splits=20, shuffle=True, random_state=123)
+        for fold, (train_idx, test_idx) in enumerate(skf.split(X_, y_)):
+            X_train, X_test = X_[train_idx], X_[test_idx]
+            y_train, y_test = y_[train_idx], y_[test_idx]
+
+            lgb_model.fit(X_train, y_train, eval_metric='auc', eval_set = [(X_test, y_test)], verbose=False)
+            probs_train = lgb_model.predict_proba(self.train_inputs)[:, 1] 
+            probs_test = lgb_model.predict_proba(self.test_inputs)[:, 1] 
+
+        predictions = np.append(probs_train, probs_test)
+        score = round(roc_auc_score(y_, predictions),2)
+
+        if score >= 0.7:
+            print(f"The model can differentiate between train and test data with an AUC of {score}. There seem to exist a significant level of concept drift between the test and train data")
+        else:
+            print(f"The model cannot strongly differentiate between train and test data with as its AUC is only {score}. There doesn't seem to exist a significant level of concept drift between the test and train data")
+
+
+        sns.kdeplot(probs_train, label='train', legend=True)
+        sns.kdeplot(probs_test, label='test', legend=True)        
+
+        predictions_train = predictions[:len(self.train_inputs)] # getting the training array
+        sample_weights = (1 - predictions_train) / predictions_train
+        sample_weights /= np.mean(sample_weights) # Normalizing the weights
+
+        return sample_weights
+
 
 class Gaussian_process(ML_models):
 
