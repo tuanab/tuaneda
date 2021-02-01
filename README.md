@@ -22,8 +22,10 @@ Example on information value:
     X = iris_data.iloc[:,:5]
     y = iris_data['target']
 
-    woe_dict, iv_dict = tuanfuncs.woe_iv_continuous(X,y,True)
-    iv_graph = tuanfuncs.barchart_dict(iv_dict) 
+    obj = tuanfuncs.Eda(X,y)
+
+    woe_dict, iv_dict = obj.woe_iv_continuous()
+    iv_graph = obj.barchart_dict(iv_dict) 
     
 
     
