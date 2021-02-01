@@ -2,7 +2,7 @@ import seaborn as sns
 import matplotlib.pyplot as plt
 import pandas as pd
 import numpy as np
-from pylab import rcParams
+# from pylab import rcParams
 import scipy.stats as stats
 from scipy.stats import chi2
 import time,tqdm
@@ -10,7 +10,232 @@ from imblearn.over_sampling import SMOTE
 import lightgbm as lgb  
 from sklearn.model_selection import StratifiedKFold
 from sklearn.metrics import roc_auc_score
+from sklearn.decomposition import PCA
+from sklearn.cluster import KMeans
 
+
+class Eda():
+    '''
+    inputs are dataframes
+    ''' 
+    def __init__(self, predictors, target):
+        self.predictors = predictors
+        self.target = target
+
+    @staticmethod
+    def normalization(data):
+        '''
+        Squeeze values to -1, 1
+        Alternative: from sklearn.preprocessing import MinMaxScaler
+        '''
+        data = np.array(data)
+
+        max_predictors = []
+        min_predictors = []
+
+        normalized_predictors= np.empty(shape=data.shape)
+
+        for i in range(data.shape[1]):
+            max_predictors.append(max([_[i] for _ in data]))
+            min_predictors.append(min([_[i] for _ in data]))
+
+        for index, arr_predictors in enumerate(data):
+            predictors = [(e - mi)/(ma - mi) for e,mi,ma in list(zip(arr_predictors,min_predictors,max_predictors))]
+            normalized_predictors[index] = predictors
+
+        return normalized_predictors
+
+    @staticmethod
+    def standardization(data):
+        '''
+        Squeeze values to -1, 1
+        Alternative: from sklearn.preprocessing import StandardScaler
+        '''
+        data = np.array(data)
+
+        mean_predictors = []
+        std_predictors = []
+
+        standardized_predictors = np.empty(shape=data.shape)
+
+        for i in range(data.shape[1]):
+            mean_predictors.append(np.mean([_[i] for _ in data]))
+            std_predictors.append(np.std([_[i] for _ in data]))
+
+        for index, arr_predictors in enumerate(data):
+            predictors = [(e - mean)/std for e,mean,std in list(zip(arr_predictors,mean_predictors,std_predictors))]
+            standardized_predictors[index] = predictors
+
+        return standardized_predictors
+
+    def pca(self, n_pca:int):
+
+        '''
+        Return an array of new pca components as well as important features
+        '''
+        scaled_data = self.standardization(self.predictors)
+        
+        n_pcs = n_pca
+
+        pca = PCA(n_components=n_pcs)
+        pca.fit(scaled_data)
+        x_pca = pca.transform(scaled_data)
+
+        # get the index of the most important feature on EACH component
+        most_important = [np.abs(pca.components_[i]).argmax() for i in range(n_pcs)]
+
+        initial_feature_names = X.columns
+        # get the feature names
+        most_important_features = [initial_feature_names[most_important[i]] for i in range(n_pcs)]
+
+        # build the dataframe
+        dic = {f'PC{i}': most_important_features[i] for i in range(n_pcs)}
+        df = pd.DataFrame(dic.items())
+
+        return x_pca, df
+
+    def kmeans(self, data, n_cluster:int):
+        '''
+        Return an array of cluster labels with plot. Maximum cluster size is 10
+        It's recommended to run pca funcation first before clustering
+        '''
+        km = KMeans(n_clusters=n_cluster)
+
+        pred = km.fit_predict(data)
+
+        color_list = ['green','navy','yellow','orange','brown','pink','red', 'purple','black','blue']
+
+        for i in range(n_cluster):
+            idx = np.where(pred==i)
+            color = color_list.pop()
+            plt.scatter(data[idx][:,0], data[idx][:,1], color=str(color), label=f"cluster {i}")
+
+        plt.scatter(km.cluster_centers_[:,0], km.cluster_centers_[:,1], color='green', marker='*', label='centroid')
+
+        plt.xlabel('mean radius')
+        plt.ylabel('mean texture')
+        plt.legend()
+
+    @staticmethod
+    def kmeans_elbow(data):
+        parameters = range(1,10)
+        sse = []
+        for k in parameters:
+            km = KMeans(n_clusters=k)
+            km.fit(data)
+            sse.append(km.inertia_)
+        plt.xlabel('k number')
+        plt.ylabel('sse')
+        plt.plot(parameters, sse)
+
+    def woe_iv_continuous(self):
+        """
+        Finding weight of importance and informational value for binary classification tasks
+        """
+        df = self.predictors.copy()
+        df['target'] = self.target.copy()
+        IV_dict = {}
+        woe_dict = {}
+
+        for col in self.predictors.columns:
+            # binning values
+            bins = np.linspace(df[col].min()-0.1, df[col].max()+0.1, int(0.05* self.predictors.shape[0]))  # each bin should have at least 5% of the observation
+            groups = df.groupby(np.digitize(df[col], bins))
+            df[col] = pd.cut(df[col], bins)
+
+            # getting class counts for each bin
+            count_series = df.groupby([col, 'target']).size()
+            new_df = count_series.to_frame(name = 'size').reset_index()
+
+            new_df['size'] = new_df['size'] + 0.5
+            df1  = new_df[new_df['target']==0].reset_index(drop=True)
+            df2  = new_df[new_df['target']==1].reset_index(drop=True)
+            df1['size1'] = df2['size']
+            new_df = df1.drop(columns=['target'])
+            sum_ = new_df['size'].sum()
+            sum1 = new_df['size1'].sum()
+            # Calculate woe and IV
+            new_df['woe'] = np.log((new_df['size']/sum_)/(new_df['size1']/sum1))
+            new_df['IV'] = ((new_df['size']/sum_) - (new_df['size1']/sum1)) * new_df['woe']
+            new_df = new_df.replace([np.inf, -np.inf], np.nan)
+            new_df.dropna(inplace=True)
+            woe_dict[col] = new_df.drop(columns=['size','size1'])
+            IV_dict[col] = new_df['IV'].sum()
+        return woe_dict, IV_dict
+
+
+    def woe_iv_categ(self):
+        """
+        Finding weight of importance and informational value for binary classification tasks
+        """
+        df = self.predictors.copy()
+        df['target'] = self.target.copy()
+        IV_dict = {}
+        woe_dict = {}
+
+        for col in self.predictors.columns:
+            # binning values
+            bins = np.linspace(df[col].min()-0.1, df[col].max()+0.1, len(set(df[col])))  # each bin should have at least 5% of the observation
+            groups = df.groupby(np.digitize(df[col], bins))
+            df[col] = pd.cut(df[col], bins)
+
+            # getting class counts for each bin
+            count_series = df.groupby([col, 'target']).size()
+            new_df = count_series.to_frame(name = 'size').reset_index()
+
+            new_df['size'] = new_df['size'] + 0.5
+            df1  = new_df[new_df['target']==0].reset_index(drop=True)
+            df2  = new_df[new_df['target']==1].reset_index(drop=True)
+            df1['size1'] = df2['size']
+            new_df = df1.drop(columns=['target'])
+            sum_ = new_df['size'].sum()
+            sum1 = new_df['size1'].sum()
+            # Calculate woe and IV
+            new_df['woe'] = np.log((new_df['size']/sum_)/(new_df['size1']/sum1))
+            new_df['IV'] = ((new_df['size']/sum_) - (new_df['size1']/sum1)) * new_df['woe']
+            new_df = new_df.replace([np.inf, -np.inf], np.nan)
+            new_df.dropna(inplace=True)
+            woe_dict[col] = new_df.drop(columns=['size','size1'])
+            IV_dict[col] = new_df['IV'].sum()
+        return woe_dict, IV_dict
+
+    @staticmethod
+    def barchart_dict(iv_dict:dict):
+        d = dict(sorted(iv_dict.items(), key=lambda item: item[1]))
+        # rcParams['figure.figsize'] = 20, 10
+        plt.bar(range(len(d)), d.values(), align='center')
+        plt.xticks(range(len(d)), list(d.keys()))
+        plt.xticks(rotation=90)
+        plt.show()
+
+    def heatmap(self):
+        df = self.predictors.copy()
+        df['target'] = self.target.copy()
+        corrmat = df.corr()
+        top_corr_features = corrmat.index
+        plt.figure(figsize=(20,20))
+        g=sns.heatmap(df[top_corr_features].corr(),annot=True,cmap="RdYlGn")
+        
+    def chi_square(self, alpha:float):
+        result = pd.DataFrame(columns=['Independent_Variable','Alpha','Degree_of_Freedom', 'Chi_Square','P_value','Conclusion'])
+        for col in self.predictors.columns:
+            table = pd.crosstab(self.target,self.predictors[col])
+            print(f"Null hypothesis: there's no relationship between {col} and the response variable")
+            observed_freq = table.values
+            val = stats.chi2_contingency(observed_freq)
+            expected_freq = val[3]
+            dof = (table.shape[0]-1) * (table.shape[1]-1)
+            chi_square = sum([(o-e)**2/e for o,e in zip(observed_freq,expected_freq)])
+            chi_square_statistic = chi_square[0] + chi_square[1]
+            p_value = 1-chi2.cdf(x=chi_square_statistic,df=dof)
+            if p_value <= alpha:
+                print(f"Test result rejects the null hypothesis. There is a relationship between the {col} and the response variable")
+                conclusion = "There's a relationship"
+            else:
+                print(f"Test result fails to reject the null hypothesis. There is no evidence to prove there's a relationship between {col} and the response variable")
+                conclusion = "There's no relationship"
+            result = result.append(pd.DataFrame([[col,alpha, dof,chi_square_statistic, p_value,conclusion]],columns=result.columns))
+        return result
 
 class ML_models():
     def __init__(self, train_inputs, train_targets, test_inputs, test_targets):
@@ -26,6 +251,10 @@ class ML_models():
         plt.show()
 
     def concept_drift(self):
+        '''
+        Evaluate concept drift between train and test data and return sample_weights as a hyperparameter to model's training
+        '''
+
         trn, tst = self.train_inputs.copy(), self.test_inputs.copy()
         trn = np.concatenate((trn,np.ones((trn.shape[0],1))),1)
         tst = np.concatenate((tst,np.zeros((tst.shape[0],1))),1)
@@ -66,7 +295,6 @@ class ML_models():
         sample_weights /= np.mean(sample_weights) # Normalizing the weights
 
         return sample_weights
-
 
 class Gaussian_process(ML_models):
 
@@ -149,18 +377,64 @@ class Gaussian_process(ML_models):
 
 class LogisticReg(ML_models):
 
-    def __init__(self, train_inputs, train_targets, test_inputs, test_targets, k_folds, hyperparameters, imbalanced=False, upsampling=False):
+    def __init__(self, train_inputs, train_targets, test_inputs, test_targets, k_folds, hyperparameters, imbalanced=False, upsampling=False, optimizer='newton'):
         super().__init__(train_inputs, train_targets, test_inputs, test_targets)
         self.k_folds = k_folds
         self.hyperparameters = hyperparameters
         self.imbalanced = imbalanced
         self.upsampling = upsampling
+        self.optimizer = optimizer
 
 
     def __str__(self):
         return(f'train_input size is {self.train_inputs.shape}, test_input size is {self.test_inputs.shape},train_target size is {self.train_targets.shape}, test_target size is {self.test_targets.shape}')
     
     __repr__ = __str__
+
+    @staticmethod
+    def conjGrad(A,x0,b,tol,maxit):
+        rold = b.reshape(-1) - np.asarray(np.matmul(A,x0)).reshape(-1)
+        rold = rold.reshape(len(rold),1) 
+        pold = rold
+        # Store values
+        steps = 0
+        X = x0 
+        res = []
+        init_normR0 = norm(rold)
+        ## tolerance check 
+        tol_check = 1
+        for k in range(maxit):
+            rt_old = np.transpose(rold)
+            pt_old = np.transpose(pold)
+            mult1 = np.matmul(rt_old,rold)
+            mult2 = np.matmul(np.matmul(pt_old,A),pold)
+            alpha = mult1/mult2
+            # Update the solution
+            alpha_pold = alpha*pold.reshape(-1)
+            X= X.reshape(-1) + alpha_pold 
+
+            rnew = rold - alpha*np.matmul(A,pold)
+
+            rt_new = np.transpose(rnew)
+            mult3 = np.matmul(rt_new,rnew)
+            beta = mult3/mult1
+            pnew = rnew + beta*pold
+            ResCal = norm(rnew)
+            res.append(ResCal)
+            tol_check = ResCal/init_normR0
+            # update p and r
+            pold = pnew
+            rold = rnew
+            steps = steps + 1 
+            if (tol_check<tol):
+                break 
+            
+        return X
+
+    @staticmethod
+    def identity_kernel(train_inputs):
+        gram_matrix = np.matmul(train_inputs,train_inputs.transpose())
+        return gram_matrix
 
     @staticmethod
     def sigmoid(input):
@@ -175,16 +449,29 @@ class LogisticReg(ML_models):
 
     @staticmethod
     def calculate_f1(labels,prediction):
+        labels = np.append(labels, 0)
+        labels = np.append(labels, 1)
+        prediction = np.append(prediction, 0)
+        prediction = np.append(prediction, 1)
+
         df_confusion = pd.crosstab(labels, prediction)
+
         TN = df_confusion.iloc[0,0]
         FN = df_confusion.iloc[1,0]
         TP = df_confusion.iloc[1,1]
         FP = df_confusion.iloc[0,1]
-        recall = TN / (TP + FN)
-        precision = TP / (TP + FP)
-        f1 = (2 * recall * precision) / (recall + precision)
+        
+        recall_0 = TN / (TN + FP)
+        recall_1 = TP / (TP + FN)
 
-        return f1
+        precision_0 = TN / TN + FN
+        precision_1 = TP / TP + FP
+
+        f1_class0 = (2 * recall_0 * precision_0) / (recall_0 + precision_0)
+        f1_class1 = (2 * recall_1 * precision_1) / (recall_1 + precision_1)
+        # ave_f1 = round((f1_class0 + f1_class1) / 2,2)
+
+        return f1_class0
 
     def eval_logistic_regression(self,inputs, weights, labels):
 
@@ -212,26 +499,33 @@ class LogisticReg(ML_models):
             train_targets = self.train_targets
 
         weights = self.initialize_weights(train_inputs.shape[1])
-        R = np.identity(train_inputs.shape[0])
 
-        # Finding optimal weights
-        max_change = 1
-        while max_change > 0.001:
-        # Creating R matrix of size N-N
-            for i in range(train_inputs.shape[0]):
-                R[i][i] = self.sigmoid(train_inputs[i].dot(weights)) * (1 - self.sigmoid(train_inputs[i].dot(weights)))
+        if self.optimizer == 'gd':
+            transformed_train_inputs = np.matmul(train_inputs.T, train_inputs)
+            transformed_train_targets = np.matmul(train_inputs.T, train_targets)
+            tol = 10**(-10)
+            maxit = 500
+            weights = self.conjGrad(transformed_train_inputs, weights, transformed_train_targets ,tol,maxit).reshape(-1)
 
-            # Creating H with the lambda param
-            H = train_inputs.T.dot(R).dot(train_inputs) + lambda_hyperparam * np.identity(train_inputs.shape[1])
-            inverse_H = np.linalg.inv(H)
+        else:
+            weights = self.initialize_weights(train_inputs.shape[1])
+            R = np.identity(train_inputs.shape[0])
+            # Finding optimal weights
+            max_change = 1
+            while max_change > 0.001:
+            # Creating R matrix of size N-N
+                for i in range(train_inputs.shape[0]):
+                    R[i][i] = self.sigmoid(train_inputs[i].dot(weights)) * (1 - self.sigmoid(train_inputs[i].dot(weights)))
 
-            # Finding gradient of the loss function with the lambda param
-            gradient_L = train_inputs.T.dot(self.sigmoid(train_inputs.dot(weights)) - train_targets) + lambda_hyperparam * weights
-
-            # Find new weights
-            delta = inverse_H.dot(gradient_L)
-            weights = weights - delta
-            max_change = max(delta)
+                # Creating H with the lambda param
+                H = train_inputs.T.dot(R).dot(train_inputs) + lambda_hyperparam * np.identity(train_inputs.shape[1])
+                inverse_H = np.linalg.inv(H)
+                # Finding gradient of the loss function with the lambda param
+                gradient_L = train_inputs.T.dot(self.sigmoid(train_inputs.dot(weights)) - train_targets) + lambda_hyperparam * weights
+                # Find new weights
+                delta = inverse_H.dot(gradient_L)
+                weights = weights - delta
+                max_change = max(delta)
 
         return weights  
 
@@ -243,8 +537,6 @@ class LogisticReg(ML_models):
         if self.upsampling == True:
             os = SMOTE(random_state=123)
             os_data_X,os_data_y=os.fit_sample(self.train_inputs, self.train_targets)
-            # os_data_X = pd.DataFrame(data=os_data_X,columns=adjusted_feature_list )
-            # os_data_y= pd.DataFrame(data=os_data_y)
             self.train_inputs = np.asarray(os_data_X)
             self.train_targets = np.asarray(os_data_y)
 
@@ -474,111 +766,11 @@ class LinkedList():
 
 
 
-def woe_iv_continuous(X,y,regularize:str):
-    """
-    Finding weight of importance and informational value for binary classification tasks
-    """
-    df = X.copy()
-    df['target'] = y.copy()
-    IV_dict = {}
-    woe_dict = {}
-
-    for col in X.columns:
-        # binning values
-        bins = np.linspace(df[col].min()-0.1, df[col].max()+0.1, int(0.05* X.shape[0]))  # each bin should have at least 5% of the observation
-        groups = df.groupby(np.digitize(df[col], bins))
-        df[col] = pd.cut(df[col], bins)
-
-        # getting class counts for each bin
-        count_series = df.groupby([col, 'target']).size()
-        new_df = count_series.to_frame(name = 'size').reset_index()
-        if regularize == True:
-            new_df['size'] = new_df['size'] + 0.5
-        df1  = new_df[new_df['target']==0].reset_index(drop=True)
-        df2  = new_df[new_df['target']==1].reset_index(drop=True)
-        df1['size1'] = df2['size']
-        new_df = df1.drop(columns=['target'])
-        sum = new_df['size'].sum()
-        sum1 = new_df['size1'].sum()
-        # Calculate woe and IV
-        new_df['woe'] = np.log((new_df['size']/sum)/(new_df['size1']/sum1))
-        new_df['IV'] = ((new_df['size']/sum) - (new_df['size1']/sum1)) * new_df['woe']
-        new_df = new_df.replace([np.inf, -np.inf], np.nan)
-        new_df.dropna(inplace=True)
-        woe_dict[col] = new_df.drop(columns=['size','size1'])
-        IV_dict[col] = new_df['IV'].sum()
-    return woe_dict, IV_dict
 
 
-def woe_iv_categ(X,y,regularize:str):
-    """
-    Finding weight of importance and informational value for binary classification tasks
-    """
-    df = X.copy()
-    df['target'] = y.copy()
-    IV_dict = {}
-    woe_dict = {}
 
-    for col in X.columns:
-        # binning values
-        bins = np.linspace(df[col].min()-0.1, df[col].max()+0.1, len(set(df[col])))  # each bin should have at least 5% of the observation
-        groups = df.groupby(np.digitize(df[col], bins))
-        df[col] = pd.cut(df[col], bins)
 
-        # getting class counts for each bin
-        count_series = df.groupby([col, 'target']).size()
-        new_df = count_series.to_frame(name = 'size').reset_index()
-        if regularize == True:
-            new_df['size'] = new_df['size'] + 0.5
-        df1  = new_df[new_df['target']==0].reset_index(drop=True)
-        df2  = new_df[new_df['target']==1].reset_index(drop=True)
-        df1['size1'] = df2['size']
-        new_df = df1.drop(columns=['target'])
-        sum = new_df['size'].sum()
-        sum1 = new_df['size1'].sum()
-        # Calculate woe and IV
-        new_df['woe'] = np.log((new_df['size']/sum)/(new_df['size1']/sum1))
-        new_df['IV'] = ((new_df['size']/sum) - (new_df['size1']/sum1)) * new_df['woe']
-        new_df = new_df.replace([np.inf, -np.inf], np.nan)
-        new_df.dropna(inplace=True)
-        woe_dict[col] = new_df.drop(columns=['size','size1'])
-        IV_dict[col] = new_df['IV'].sum()
-    return woe_dict, IV_dict
 
-def barchart_dict(d):
-    d = dict(sorted(d.items(), key=lambda item: item[1]))
-    rcParams['figure.figsize'] = 20, 10
-    plt.bar(range(len(d)), d.values(), align='center')
-    plt.xticks(range(len(d)), list(d.keys()))
-    plt.xticks(rotation=90)
-    plt.show()
-
-def heatmap(df):
-    corrmat = df.corr()
-    top_corr_features = corrmat.index
-    plt.figure(figsize=(20,20))
-    g=sns.heatmap(df[top_corr_features].corr(),annot=True,cmap="RdYlGn")
-    
-def chi_square(X,y,alpha:float):
-    result = pd.DataFrame(columns=['Independent_Variable','Alpha','Degree_of_Freedom', 'Chi_Square','P_value','Conclusion'])
-    for col in X.columns:
-        table = pd.crosstab(y,X[col])
-        print(f"Null hypothesis: there's no relationship between {col} and the response variable")
-        observed_freq = table.values
-        val = stats.chi2_contingency(observed_freq)
-        expected_freq = val[3]
-        dof = (table.shape[0]-1) * (table.shape[1]-1)
-        chi_square = sum([(o-e)**2/e for o,e in zip(observed_freq,expected_freq)])
-        chi_square_statistic = chi_square[0] + chi_square[1]
-        p_value = 1-chi2.cdf(x=chi_square_statistic,df=dof)
-        if p_value <= alpha:
-            print(f"Test result rejects the null hypothesis. There is a relationship between the {col} and the response variable")
-            conclusion = "There's a relationship"
-        else:
-            print(f"Test result fails to reject the null hypothesis. There is no evidence to prove there's a relationship between {col} and the response variable")
-            conclusion = "There's no relationship"
-        result = result.append(pd.DataFrame([[col,alpha, dof,chi_square_statistic, p_value,conclusion]],columns=result.columns))
-    return result
 
 
 

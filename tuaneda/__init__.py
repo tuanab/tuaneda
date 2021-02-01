@@ -1,5 +1,4 @@
-from .tuanfuncs import woe_iv_continuous,woe_iv_categ, barchart_dict, heatmap, chi_square
-from .tuanfuncs import Gaussian_process, LogisticReg, Stack, Queue, MaxHeap, MinHeap, Node, LinkedList
+from .tuanfuncs import Eda, Gaussian_process, LogisticReg, Stack, Queue, MaxHeap, MinHeap, Node, LinkedList, woe_iv_continuous, woe_iv_categ, barchart_dict, heatmap, chi_square
 
 
 __all__ = [
