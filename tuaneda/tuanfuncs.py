@@ -84,7 +84,7 @@ class Eda():
         # get the index of the most important feature on EACH component
         most_important = [np.abs(pca.components_[i]).argmax() for i in range(n_pcs)]
 
-        initial_feature_names = X.columns
+        initial_feature_names = self.predictors.columns
         # get the feature names
         most_important_features = [initial_feature_names[most_important[i]] for i in range(n_pcs)]
 
